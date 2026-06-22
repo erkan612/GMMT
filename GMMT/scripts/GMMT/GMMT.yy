@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"GMMT",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"GMMT",
+  "parent":{
+    "name":"GMMT",
+    "path":"folders/GMMT.yy",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
