@@ -1,0 +1,13 @@
+{
+  "$GMScript":"v1",
+  "%Name":"cDemo",
+  "isCompatibility":false,
+  "isDnD":false,
+  "name":"cDemo",
+  "parent":{
+    "name":"GMMT",
+    "path":"GMMT.yyp",
+  },
+  "resourceType":"GMScript",
+  "resourceVersion":"2.0",
+}
