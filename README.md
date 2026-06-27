@@ -57,3 +57,6 @@ draw_sprite(sprite_index, image_index,
     x + gmmt_get_value("bob_offset")[0],
     y + gmmt_get_value("bob_offset")[1]);
 ```
+
+### Demo preview using [GMUI](https://github.com/erkan612/GMUI)
+<img width="1299" height="737" alt="gif" src="https://github.com/user-attachments/assets/f6c61fac-edbb-4982-bafa-737ffe337950" />
