@@ -235,10 +235,21 @@ function gmmt_demo() {
 					gmui_text_disabled("MOTION PATHS - DRAG CONTROL POINTS");
 					gmui_separator();
 					
-					static path_cp1 = [0.25, 0.75];
-					static path_cp2 = [0.75, 0.25];
-					static path_p0  = [0.0,  0.0 ];
-					static path_p3  = [1.0,  1.0 ];
+					static bezier_points = [
+					    [0.0,  0.0 ],   // anchor
+					    [0.1,  0.4 ],   // ctrl
+					    [0.15, 0.6 ],   // ctrl
+					    [0.25, 0.75],   // anchor
+					    [0.4,  0.85],   // ctrl
+					    [0.5,  0.5 ],   // ctrl
+					    [0.5,  0.3 ],   // anchor
+					    [0.6,  0.1 ],   // ctrl
+					    [0.65, 0.85],   // ctrl
+					    [0.75, 0.9 ],   // anchor
+					    [0.85, 0.95],   // ctrl
+					    [0.9,  1.0 ],   // ctrl
+					    [1.0,  1.0 ],   // anchor
+					];
 					static path_progress = 0;
 					static path_playing = false;
 					static path_mode = 0; // 0 = bezier, 1 = spline
@@ -284,64 +295,110 @@ function gmmt_demo() {
 					    var dragging = cache[? "__bezier_drag"];
 
 					    if (path_mode == 0) {
-					        var p0x  = pv_pad + path_p0[0]  * pv_w; var p0y  = pv_pad + (1 - path_p0[1])  * pv_h;
-					        var p3x  = pv_pad + path_p3[0]  * pv_w; var p3y  = pv_pad + (1 - path_p3[1])  * pv_h;
-					        var cp1x = pv_pad + path_cp1[0] * pv_w; var cp1y = pv_pad + (1 - path_cp1[1]) * pv_h;
-					        var cp2x = pv_pad + path_cp2[0] * pv_w; var cp2y = pv_pad + (1 - path_cp2[1]) * pv_h;
+					        var n = array_length(bezier_points);
+					        var n_segments = (n - 1) div 3;
+
+					        var sx_arr = array_create(n);
+					        var sy_arr = array_create(n);
+					        for (var i = 0; i < n; i++) {
+					            sx_arr[i] = pv_pad + bezier_points[i][0] * pv_w;
+					            sy_arr[i] = pv_pad + (1 - bezier_points[i][1]) * pv_h;
+					        }
 
 					        if (input.m_pressed && input.hovered_container == pv_container) {
-					            if      (point_distance(mx, my, p0x,  p0y)  <= hit_r) { dragging = 0; }
-					            else if (point_distance(mx, my, cp1x, cp1y) <= hit_r) { dragging = 1; }
-					            else if (point_distance(mx, my, cp2x, cp2y) <= hit_r) { dragging = 2; }
-					            else if (point_distance(mx, my, p3x,  p3y)  <= hit_r) { dragging = 3; }
+					            dragging = -1;
+					            for (var i = 0; i < n; i++) {
+					                if (point_distance(mx, my, sx_arr[i], sy_arr[i]) <= hit_r) {
+					                    dragging = i;
+					                    break;
+					                }
+					            }
 					            cache[? "__bezier_drag"] = dragging;
 					        }
 					        if (!input.m_held) { cache[? "__bezier_drag"] = -1; dragging = -1; }
 
-					        if (input.m_held) {
+					        //if (input.m_held && dragging >= 0) {
+					        //    var nx = clamp((mx - pv_pad) / pv_w, 0, 1);
+					        //    var ny = clamp(1 - (my - pv_pad) / pv_h, 0, 1);
+					        //    bezier_points[dragging][0] = nx;
+					        //    bezier_points[dragging][1] = ny;
+					        //    sx_arr[dragging] = pv_pad + nx * pv_w;
+					        //    sy_arr[dragging] = pv_pad + (1 - ny) * pv_h;
+					        //}
+							
+							if (input.m_held && dragging >= 0) {
 					            var nx = clamp((mx - pv_pad) / pv_w, 0, 1);
 					            var ny = clamp(1 - (my - pv_pad) / pv_h, 0, 1);
-					            switch (dragging) {
-					                case 0: path_p0[0]  = nx; path_p0[1]  = ny; break;
-					                case 1: path_cp1[0] = nx; path_cp1[1] = ny; break;
-					                case 2: path_cp2[0] = nx; path_cp2[1] = ny; break;
-					                case 3: path_p3[0]  = nx; path_p3[1]  = ny; break;
+
+					            var old_x = bezier_points[dragging][0];
+					            var old_y = bezier_points[dragging][1];
+					            var dx = nx - old_x;
+					            var dy = ny - old_y;
+
+					            bezier_points[dragging][0] = nx;
+					            bezier_points[dragging][1] = ny;
+					            sx_arr[dragging] = pv_pad + nx * pv_w;
+					            sy_arr[dragging] = pv_pad + (1 - ny) * pv_h;
+
+					            var is_anchor = (dragging % 3 == 0);
+					            if (is_anchor) {
+					                if (dragging - 1 >= 0) {
+					                    bezier_points[dragging - 1][0] = clamp(bezier_points[dragging - 1][0] + dx, 0, 1);
+					                    bezier_points[dragging - 1][1] = clamp(bezier_points[dragging - 1][1] + dy, 0, 1);
+					                    sx_arr[dragging - 1] = pv_pad + bezier_points[dragging - 1][0] * pv_w;
+					                    sy_arr[dragging - 1] = pv_pad + (1 - bezier_points[dragging - 1][1]) * pv_h;
+					                }
+					                if (dragging + 1 < n) {
+					                    bezier_points[dragging + 1][0] = clamp(bezier_points[dragging + 1][0] + dx, 0, 1);
+					                    bezier_points[dragging + 1][1] = clamp(bezier_points[dragging + 1][1] + dy, 0, 1);
+					                    sx_arr[dragging + 1] = pv_pad + bezier_points[dragging + 1][0] * pv_w;
+					                    sy_arr[dragging + 1] = pv_pad + (1 - bezier_points[dragging + 1][1]) * pv_h;
+					                }
 					            }
-					            p0x  = pv_pad + path_p0[0]  * pv_w; p0y  = pv_pad + (1 - path_p0[1])  * pv_h;
-					            p3x  = pv_pad + path_p3[0]  * pv_w; p3y  = pv_pad + (1 - path_p3[1])  * pv_h;
-					            cp1x = pv_pad + path_cp1[0] * pv_w; cp1y = pv_pad + (1 - path_cp1[1]) * pv_h;
-					            cp2x = pv_pad + path_cp2[0] * pv_w; cp2y = pv_pad + (1 - path_cp2[1]) * pv_h;
 					        }
 
-					        gmui_add_line(p0x, p0y, cp1x, cp1y, make_color_rgb(100, 100, 100), 1);
-					        gmui_add_line(cp2x, cp2y, p3x, p3y, make_color_rgb(100, 100, 100), 1);
+					        for (var seg = 0; seg < n_segments; seg++) {
+					            var i0 = seg * 3;
+					            var p0x = sx_arr[i0],     p0y = sy_arr[i0];
+					            var c1x = sx_arr[i0 + 1], c1y = sy_arr[i0 + 1];
+					            var c2x = sx_arr[i0 + 2], c2y = sy_arr[i0 + 2];
+					            var p3x = sx_arr[i0 + 3], p3y = sy_arr[i0 + 3];
 
-					        var curve_steps = 32;
-					        for (var i = 0; i < curve_steps; i++) {
-					            var t1 = i / curve_steps;
-					            var t2 = (i + 1) / curve_steps;
-					            var bx1 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0x, cp1x, t1), gmmt_lerp(cp1x, cp2x, t1), t1), gmmt_lerp(gmmt_lerp(cp1x, cp2x, t1), gmmt_lerp(cp2x, p3x, t1), t1), t1);
-					            var by1 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0y, cp1y, t1), gmmt_lerp(cp1y, cp2y, t1), t1), gmmt_lerp(gmmt_lerp(cp1y, cp2y, t1), gmmt_lerp(cp2y, p3y, t1), t1), t1);
-					            var bx2 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0x, cp1x, t2), gmmt_lerp(cp1x, cp2x, t2), t2), gmmt_lerp(gmmt_lerp(cp1x, cp2x, t2), gmmt_lerp(cp2x, p3x, t2), t2), t2);
-					            var by2 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0y, cp1y, t2), gmmt_lerp(cp1y, cp2y, t2), t2), gmmt_lerp(gmmt_lerp(cp1y, cp2y, t2), gmmt_lerp(cp2y, p3y, t2), t2), t2);
-					            gmui_add_line_width(bx1, by1, bx2, by2, 2, make_color_rgb(75, 135, 210), 1);
+					            gmui_add_line(p0x, p0y, c1x, c1y, make_color_rgb(100, 100, 100), 1);
+					            gmui_add_line(c2x, c2y, p3x, p3y, make_color_rgb(100, 100, 100), 1);
+
+					            var curve_steps = 32;
+					            for (var i = 0; i < curve_steps; i++) {
+					                var t1 = i / curve_steps;
+					                var t2 = (i + 1) / curve_steps;
+					                var bx1 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0x, c1x, t1), gmmt_lerp(c1x, c2x, t1), t1), gmmt_lerp(gmmt_lerp(c1x, c2x, t1), gmmt_lerp(c2x, p3x, t1), t1), t1);
+					                var by1 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0y, c1y, t1), gmmt_lerp(c1y, c2y, t1), t1), gmmt_lerp(gmmt_lerp(c1y, c2y, t1), gmmt_lerp(c2y, p3y, t1), t1), t1);
+					                var bx2 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0x, c1x, t2), gmmt_lerp(c1x, c2x, t2), t2), gmmt_lerp(gmmt_lerp(c1x, c2x, t2), gmmt_lerp(c2x, p3x, t2), t2), t2);
+					                var by2 = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0y, c1y, t2), gmmt_lerp(c1y, c2y, t2), t2), gmmt_lerp(gmmt_lerp(c1y, c2y, t2), gmmt_lerp(c2y, p3y, t2), t2), t2);
+					                gmui_add_line_width(bx1, by1, bx2, by2, 2, make_color_rgb(75, 135, 210), 1);
+					            }
 					        }
 
 					        if (path_progress > 0) {
-					            var pt = path_progress;
-					            var ppx = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0x, cp1x, pt), gmmt_lerp(cp1x, cp2x, pt), pt), gmmt_lerp(gmmt_lerp(cp1x, cp2x, pt), gmmt_lerp(cp2x, p3x, pt), pt), pt);
-					            var ppy = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0y, cp1y, pt), gmmt_lerp(cp1y, cp2y, pt), pt), gmmt_lerp(gmmt_lerp(cp1y, cp2y, pt), gmmt_lerp(cp2y, p3y, pt), pt), pt);
+					            var global_t = path_progress * n_segments;
+					            var seg = min(floor(global_t), n_segments - 1);
+					            var t   = global_t - seg;
+					            var i0  = seg * 3;
+					            var p0x = sx_arr[i0],     p0y = sy_arr[i0];
+					            var c1x = sx_arr[i0 + 1], c1y = sy_arr[i0 + 1];
+					            var c2x = sx_arr[i0 + 2], c2y = sy_arr[i0 + 2];
+					            var p3x = sx_arr[i0 + 3], p3y = sy_arr[i0 + 3];
+					            var ppx = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0x, c1x, t), gmmt_lerp(c1x, c2x, t), t), gmmt_lerp(gmmt_lerp(c1x, c2x, t), gmmt_lerp(c2x, p3x, t), t), t);
+					            var ppy = gmmt_lerp(gmmt_lerp(gmmt_lerp(p0y, c1y, t), gmmt_lerp(c1y, c2y, t), t), gmmt_lerp(gmmt_lerp(c1y, c2y, t), gmmt_lerp(c2y, p3y, t), t), t);
 					            gmui_add_circle(ppx, ppy, 6, false, c_orange, 1);
 					        }
 
-					        var p0_hov  = (point_distance(mx, my, p0x,  p0y)  <= hit_r) || dragging == 0;
-					        var cp1_hov = (point_distance(mx, my, cp1x, cp1y) <= hit_r) || dragging == 1;
-					        var cp2_hov = (point_distance(mx, my, cp2x, cp2y) <= hit_r) || dragging == 2;
-					        var p3_hov  = (point_distance(mx, my, p3x,  p3y)  <= hit_r) || dragging == 3;
-					        gmui_add_circle(p0x,  p0y,  p0_hov  ? 7 : 5, false, p0_hov  ? c_orange : c_white,  1);
-					        gmui_add_circle(cp1x, cp1y, cp1_hov ? 7 : 5, false, cp1_hov ? c_orange : c_yellow, 1);
-					        gmui_add_circle(cp2x, cp2y, cp2_hov ? 7 : 5, false, cp2_hov ? c_orange : c_yellow, 1);
-					        gmui_add_circle(p3x,  p3y,  p3_hov  ? 7 : 5, false, p3_hov  ? c_orange : c_white,  1);
+					        for (var i = 0; i < n; i++) {
+					            var is_anchor = (i mod 3 == 0);
+					            var hov = (point_distance(mx, my, sx_arr[i], sy_arr[i]) <= hit_r) || dragging == i;
+					            var base_col = is_anchor ? c_white : c_yellow;
+					            gmui_add_circle(sx_arr[i], sy_arr[i], hov ? 7 : 5, false, hov ? c_orange : base_col, 1);
+					        }
 
 					    } else {
 					        var n = array_length(spline_anchors);

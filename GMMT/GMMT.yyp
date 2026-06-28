@@ -11,12 +11,12 @@
   "defaultScriptType":1,
   "Folders":[
     {"$GMFolder":"","%Name":"GMMT","folderPath":"folders/GMMT.yy","name":"GMMT","resourceType":"GMFolder","resourceVersion":"2.0",},
+    {"$GMFolder":"","%Name":"Other Libs","folderPath":"folders/Other Libs.yy","name":"Other Libs","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"GMUI","folderPath":"folders/Other Libs/GMUI.yy","name":"GMUI","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Core","folderPath":"folders/Other Libs/GMUI/Core.yy","name":"Core","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Features","folderPath":"folders/Other Libs/GMUI/Features.yy","name":"Features","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Shaders","folderPath":"folders/Other Libs/GMUI/Shaders.yy","name":"Shaders","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"Widgets","folderPath":"folders/Other Libs/GMUI/Widgets.yy","name":"Widgets","resourceType":"GMFolder","resourceVersion":"2.0",},
-    {"$GMFolder":"","%Name":"Other Libs","folderPath":"folders/Other Libs.yy","name":"Other Libs","resourceType":"GMFolder","resourceVersion":"2.0",},
   ],
   "ForcedPrefabProjectReferences":[],
   "IncludedFiles":[],
