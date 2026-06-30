@@ -29,7 +29,7 @@
 *   					     ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝   ╚═╝   		                 *
 *   						       GameMaker Motion Toolkit									 *
 *   						  Tweening framework for GameMaker								 *
-*   						            Version 1.0.0					                     *
+*   						            Version 1.1.23					                     *
 *   																                         *
 *   						             by erkan612					                     *
 *   						****************************************                         *
@@ -114,6 +114,18 @@ enum gmmt_tween_flags {
 	SYNC_TO_AUDIO				= 1 << 5,
 	QUEUE						= 1 << 6,
 	REPEAT_RESET_ON_DELAY		= 1 << 7,
+}
+
+enum gmmt_tween_callbacks {
+	ON_START,
+	ON_UPDATE,
+	ON_COMPLETE,
+	ON_REPEAT,
+	ON_PINGPONG,
+	ON_PAUSE,
+	ON_RESUME,
+	ON_KILL,
+	ON_DIRECTION_CHANGE,
 }
 
 // color stuff
@@ -711,6 +723,62 @@ function gmmt_kill_group(_group_name) {
 	}
 }
 
+function gmmt_group_pause(_group_name) {
+	var _anim = gmmt_get();
+	var _group_list = ds_map_find_value(_anim.groups, _group_name);
+	if (_group_list != undefined) {
+		for (var i = array_length(_group_list) - 1; i >= 0; i--) {
+			var _tween = ds_map_find_value(_anim.tweens_map, _group_list[i]);
+			if (_tween != undefined && _tween.state == gmmt_tween_state.PLAYING) {
+				_tween.state = gmmt_tween_state.PAUSED;
+				_anim.active_tweens--;
+				if (_tween.on_pause != undefined) { _tween.on_pause(_tween); }
+			}
+		}
+	}
+}
+
+function gmmt_group_resume(_group_name) {
+	var _anim = gmmt_get();
+	var _group_list = ds_map_find_value(_anim.groups, _group_name);
+	if (_group_list != undefined) {
+		for (var i = array_length(_group_list) - 1; i >= 0; i--) {
+			var _tween = ds_map_find_value(_anim.tweens_map, _group_list[i]);
+			if (_tween != undefined && _tween.state == gmmt_tween_state.PAUSED) {
+				_tween.state = gmmt_tween_state.PLAYING;
+				_anim.active_tweens++;
+				if (_tween.on_resume != undefined) { _tween.on_resume(_tween); }
+			}
+		}
+	}
+}
+
+function gmmt_group_stop(_group_name, _go_to_end = false) {
+	var _anim = gmmt_get();
+	var _group_list = ds_map_find_value(_anim.groups, _group_name);
+	if (_group_list != undefined) {
+		for (var i = array_length(_group_list) - 1; i >= 0; i--) {
+			var _tween = ds_map_find_value(_anim.tweens_map, _group_list[i]);
+			if (_tween != undefined) {
+				if (_go_to_end) {
+					_tween.current_value = _tween.end_value;
+				}
+				if (_tween.state == gmmt_tween_state.PLAYING) {
+					_anim.active_tweens--;
+				}
+				_tween.state = gmmt_tween_state.KILLED;
+				_tween.completed = true;
+				
+				ds_map_delete(_anim.tweens_map, _group_list[i]);
+				
+				if (_tween.on_kill != undefined) { _tween.on_kill(_tween); }
+				
+				array_delete(_group_list, i, 1);
+			}
+		}
+	}
+}
+
 function gmmt_kill_all() {
 	var _anim = gmmt_get();
 	var _tweens = _anim.tweens;
@@ -762,6 +830,15 @@ function gmmt_get_progress(_id) {
 function gmmt_is_playing(_id) {
 	var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
 	return (_tween != undefined && _tween.state == gmmt_tween_state.PLAYING);
+}
+
+function gmmt_is_complete(_id) {
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween == undefined) {
+        return true;
+    }
+    return (_tween.state == gmmt_tween_state.COMPLETED || 
+            _tween.state == gmmt_tween_state.KILLED);
 }
 
 function gmmt_exists(_id) {
@@ -1116,6 +1193,25 @@ function gmmt_tween_start(_id, _from, _to, _duration = -1, _easing = undefined) 
 	return gmmt_tween_internal(_id, _from, _to, _duration, _easing);
 }
 
+function gmmt_tween_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
+}
+
 function gmmt_tween_internal(_id, _from, _to, _duration, _easing) {
 	var _tween = gmmt_create(_id, _from, _to, _duration);
 	
@@ -1465,7 +1561,7 @@ function gmmt_spring_start(_id, _from, _to, _tension = 0.5, _friction = 0.3, _ma
 		
 		_sd.velocity = _new_vel;
 		
-		if (abs(_new_vel) < 0.01 && abs(_new_val - _sd.target) < 0.01) {
+		if (abs(_new_vel) < 0.01 && abs(_new_val - _sd.target) < _sd.precision) {
 			_sd.velocity = 0;
 			gmmt_complete_tween(self);
 			return _sd.target;
@@ -2083,6 +2179,25 @@ function gmmt_tween_color3(_id, _from_color, _to_color, _duration = -1, _easing 
 	return gmmt_get_value(_id);
 }
 
+function gmmt_tween_color3_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_color3_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
+}
+
 function gmmt_tween_color4_start(_id, _from_color, _to_color, _duration = -1, _easing = undefined) {
 	gmmt_init_check_safe();
 	gmmt_remove_existing_tween(_id);
@@ -2101,6 +2216,25 @@ function gmmt_tween_color4(_id, _from_color, _to_color, _duration = -1, _easing 
 	if (_exists != undefined && _exists.state != gmmt_tween_state.KILLED) { return gmmt_get_value(_id); }
 	gmmt_tween_color4_start(_id, _from_color, _to_color, _duration, _easing);
 	return gmmt_get_value(_id);
+}
+
+function gmmt_tween_color4_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_color4_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
 }
 
 function gmmt_tween_vector2_start(_id, _from_vec2, _to_vec2, _duration = -1, _easing = undefined) {
@@ -2123,6 +2257,25 @@ function gmmt_tween_vector2(_id, _from_vec2, _to_vec2, _duration = -1, _easing =
 	return gmmt_get_value(_id);
 }
 
+function gmmt_tween_vector2_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_vector2_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
+}
+
 function gmmt_tween_vector3_start(_id, _from_vec3, _to_vec3, _duration = -1, _easing = undefined) {
 	gmmt_init_check_safe();
 	gmmt_remove_existing_tween(_id);
@@ -2141,6 +2294,25 @@ function gmmt_tween_vector3(_id, _from_vec3, _to_vec3, _duration = -1, _easing =
 	if (_exists != undefined && _exists.state != gmmt_tween_state.KILLED) { return gmmt_get_value(_id); }
 	gmmt_tween_vector3_start(_id, _from_vec3, _to_vec3, _duration, _easing);
 	return gmmt_get_value(_id);
+}
+
+function gmmt_tween_vector3_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_vector3_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
 }
 
 function gmmt_tween_vector4_start(_id, _from_vec4, _to_vec4, _duration = -1, _easing = undefined) {
@@ -2163,6 +2335,25 @@ function gmmt_tween_vector4(_id, _from_vec4, _to_vec4, _duration = -1, _easing =
 	return gmmt_get_value(_id);
 }
 
+function gmmt_tween_vector4_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_vector4_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
+}
+
 function gmmt_tween_array_start(_id, _from_array, _to_array, _duration = -1, _easing = undefined) {
 	gmmt_init_check_safe();
 	gmmt_remove_existing_tween(_id);
@@ -2183,6 +2374,25 @@ function gmmt_tween_array(_id, _from_array, _to_array, _duration = -1, _easing =
 	return gmmt_get_value(_id);
 }
 
+function gmmt_tween_array_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_array_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
+}
+
 function gmmt_tween_int(_id, _from, _to, _duration = -1, _easing = undefined) {
 	gmmt_init_check_safe();
 	var _exists = ds_map_find_value(gmmt_get().tweens_map, _id);
@@ -2201,6 +2411,25 @@ function gmmt_tween_int_start(_id, _from, _to, _duration = -1, _easing = undefin
 	_tween.state = gmmt_tween_state.PLAYING;
 	gmmt_get().active_tweens++;
 	return _tween;
+}
+
+function gmmt_tween_int_to(_id, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween != undefined && _tween.state != gmmt_tween_state.KILLED) {
+        if (_tween.end_value != _to) {
+            _tween.start_value = _tween.current_value;
+            _tween.original_start = _tween.current_value;
+            _tween.end_value = _to;
+            _tween.original_end = _to;
+            _tween.elapsed = 0;
+        }
+        if (_duration >= 0) { _tween.duration = _duration; }
+        if (_easing != undefined) { _tween.easing = _easing; }
+        return gmmt_get_value(_id);
+    }
+    gmmt_tween_int_start(_id, _from, _to, _duration, _easing);
+    return gmmt_get_value(_id);
 }
 
 // bezier paths
@@ -2358,5 +2587,221 @@ function gmmt_tween_spline_start(_id, _points, _duration = -1, _loop = false, _e
 	if (_easing != undefined) gmmt_set_easing(_id, _easing);
 	_tween.state = gmmt_tween_state.PLAYING;
 	gmmt_get().active_tweens++;
+	return _tween;
+}
+
+// more convinience functions
+function gmmt_tween_bind_to_start(_id, _target, _property_name, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    
+    gmmt_remove_existing_tween(_id);
+    
+    var _tween = gmmt_create(_id, _from, _to, _duration);
+    
+    _tween.value_type = gmmt_detect_value_type(_from);
+    _tween.value_lerp = gmmt_get_lerp_function(_tween.value_type);
+    
+    if (_easing != undefined) {
+        _tween.easing = _easing;
+    }
+    
+    _tween.user_data = {
+        bind_target: _target,
+        bind_property: _property_name,
+    };
+    
+    _tween.on_update = method(_tween, function(_t) {
+        var _ud = self.user_data;
+        if (_ud.bind_target != undefined && _ud.bind_property != undefined) {
+			if (is_struct(_ud.bind_target)) {
+			    variable_struct_set(_ud.bind_target, _ud.bind_property, self.current_value);
+			} else {
+			    variable_instance_set(_ud.bind_target, _ud.bind_property, self.current_value);
+			}
+        }
+    });
+    
+    _tween.state = gmmt_tween_state.PLAYING;
+    gmmt_get().active_tweens++;
+    
+    if (_tween.on_start != undefined) {
+        _tween.on_start(_tween);
+    }
+    
+    return _tween;
+}
+
+function gmmt_tween_bind_to(_id, _target, _property_name, _from, _to, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    
+    gmmt_tween_to(_id, _from, _to, _duration, _easing);
+    
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween == undefined) {
+        return undefined;
+    }
+    
+    if (!is_struct(_tween.user_data)) {
+        _tween.user_data = {};
+    }
+    _tween.user_data.bind_target = _target;
+    _tween.user_data.bind_property = _property_name;
+    
+    var _existing_on_update = _tween.on_update;
+    
+    _tween.on_update = method(_tween, function(_t) {
+        var _ud = self.user_data;
+        if (_ud.bind_target != undefined && _ud.bind_property != undefined) {
+            if (is_struct(_ud.bind_target)) {
+                variable_struct_set(_ud.bind_target, _ud.bind_property, self.current_value);
+            } else {
+                variable_instance_set(_ud.bind_target, _ud.bind_property, self.current_value);
+            }
+        }
+        
+        if (_existing_on_update != undefined) {
+            _existing_on_update(_t);
+        }
+    });
+    
+    return gmmt_get_value(_id);
+}
+
+function gmmt_set_callback(_id, _callback, _func) {
+    gmmt_init_check_safe();
+    
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween == undefined) {
+        //show_debug_message("GMMT ERROR: Cannot set callback - tween with id '" + string(_id) + "' not found");
+        return undefined;
+    }
+    
+    var _valid_events = [
+        "on_start",
+        "on_update",
+        "on_complete",
+        "on_repeat",
+        "on_pingpong",
+        "on_pause",
+        "on_resume",
+        "on_kill",
+        "on_direction_change",
+    ];
+    
+	var _event_name = _valid_events[_callback];
+    variable_struct_set(_tween, _event_name, method({ }, _func));
+    
+    return _tween;
+}
+
+function gmmt_easy_move(_inst, _target_x, _target_y, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _inst_id = is_struct(_inst) ? string(ptr(_inst)) : string(_inst);
+    var _id_x = "_easy_move_x_" + _inst_id;
+    var _id_y = "_easy_move_y_" + _inst_id;
+    gmmt_tween_bind_to(_id_x, _inst, "x", _inst.x, _target_x, _duration, _easing);
+    gmmt_tween_bind_to(_id_y, _inst, "y", _inst.y, _target_y, _duration, _easing);
+    return [_id_x, _id_y];
+}
+
+function gmmt_easy_scale(_inst, _target_xscale, _target_yscale, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _inst_id = is_struct(_inst) ? string(ptr(_inst)) : string(_inst);
+    var _id_x = "_easy_scalex_" + _inst_id;
+    var _id_y = "_easy_scaley_" + _inst_id;
+    gmmt_tween_bind_to(_id_x, _inst, "image_xscale", _inst.image_xscale, _target_xscale, _duration, _easing);
+    gmmt_tween_bind_to(_id_y, _inst, "image_yscale", _inst.image_yscale, _target_yscale, _duration, _easing);
+    return [_id_x, _id_y];
+}
+
+function gmmt_easy_fade(_inst, _target_alpha, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _inst_id = is_struct(_inst) ? string(ptr(_inst)) : string(_inst);
+    var _id = "_easy_fade_" + _inst_id;
+    return gmmt_tween_bind_to(_id, _inst, "image_alpha", _inst.image_alpha, _target_alpha, _duration, _easing);
+}
+
+function gmmt_easy_rotate(_inst, _target_angle, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _inst_id = is_struct(_inst) ? string(ptr(_inst)) : string(_inst);
+    var _id = "_easy_rotate_" + _inst_id;
+    return gmmt_tween_bind_to(_id, _inst, "image_angle", _inst.image_angle, _target_angle, _duration, _easing);
+}
+
+function gmmt_easy_color(_inst, _target_color, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _inst_id = is_struct(_inst) ? string(ptr(_inst)) : string(_inst);
+    var _id = "_easy_color_" + _inst_id;
+    return gmmt_tween_bind_to(_id, _inst, "image_blend", _inst.image_blend, _target_color, _duration, _easing);
+}
+
+function gmmt_easy_x(_inst, _target_x, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _inst_id = is_struct(_inst) ? string(ptr(_inst)) : string(_inst);
+    var _id = "_easy_x_" + _inst_id;
+    return gmmt_tween_bind_to(_id, _inst, "x", _inst.x, _target_x, _duration, _easing);
+}
+
+function gmmt_easy_y(_inst, _target_y, _duration = -1, _easing = undefined) {
+    gmmt_init_check_safe();
+    var _inst_id = is_struct(_inst) ? string(ptr(_inst)) : string(_inst);
+    var _id = "_easy_y_" + _inst_id;
+    return gmmt_tween_bind_to(_id, _inst, "y", _inst.y, _target_y, _duration, _easing);
+}
+
+function gmmt_spring_set_target(_id, _new_target) {
+    gmmt_init_check_safe();
+    
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    if (_tween == undefined) {
+        //show_debug_message("GMMT ERROR: Cannot set spring target - tween with id '" + string(_id) + "' not found");
+        return undefined;
+    }
+    
+    if (_tween.spring_data == undefined) {
+        //show_debug_message("GMMT ERROR: Tween '" + string(_id) + "' is not a spring tween");
+        return undefined;
+    }
+    
+    _tween.spring_data.target = _new_target;
+    
+    return _tween;
+}
+
+function gmmt_spring_is_settled(_id) {
+    gmmt_init_check_safe();
+    
+    var _tween = ds_map_find_value(gmmt_get().tweens_map, _id);
+    
+    if (_tween == undefined || _tween.state == gmmt_tween_state.COMPLETED || _tween.state == gmmt_tween_state.KILLED) {
+        return true;
+    }
+    
+    if (!variable_struct_exists(_tween, "spring_data")) {
+        return true;
+    }
+    
+    var _sd = _tween.spring_data;
+    
+    return (abs(_sd.velocity) < 0.01 && abs(_tween.current_value - _sd.target) < _sd.precision);
+}
+
+function gmmt_timer(_id, _duration, _func) {
+	gmmt_init_check_safe();
+	
+	gmmt_remove_existing_tween(_id);
+	
+	var _tween = gmmt_create(_id, 0, 0, _duration);
+	
+	_tween.flags = gmmt_tween_flags.DELETE_ON_COMPLETE;
+	_tween.easing = gmmt_ease.LINEAR;
+	
+	_tween.on_complete = method({}, _func);
+	
+	_tween.state = gmmt_tween_state.PLAYING;
+	gmmt_get().active_tweens++;
+	
+	if (_tween.on_start != undefined) { _tween.on_start(_tween); }
+	
 	return _tween;
 }
