@@ -189,13 +189,14 @@ function gmmt_demo() {
 					if (gmui_begin_child("spring playground")) {
 						var width = gmui_get_current_container().width;
 						var height = gmui_get_current_container().height;
-					
-						static trail = array_create(8, array_create(2, 0));
+						
+						static trail_steps = 32;
+						static trail = array_create(trail_steps, array_create(2, 0));
 						array_push(trail, [ bx, by ]);
-						while (array_length(trail) > 8) { array_delete(trail, 0, 1); };
+						while (array_length(trail) > trail_steps) { array_delete(trail, 0, 1); };
 						for (var i = 1; i < array_length(trail); i++) {
 							var a = 1 / array_length(trail);
-							gmui_add_line_width(trail[i-1][0], trail[i-1][1], trail[i][0], trail[i][1], 2, make_color_rgb(50, 100, 210), a * 0.55);
+							gmui_add_line_width(trail[i-1][0], trail[i-1][1], trail[i][0], trail[i][1], 2, make_color_rgb(50, 100, 210), a * i);
 						};
 						gmui_add_circle(tx, ty, 5, true, make_color_rgb(220, 80, 60));
 						gmui_add_line(tx - 10, ty, tx + 10, ty, make_color_rgb(220, 80, 60), 0.8);
