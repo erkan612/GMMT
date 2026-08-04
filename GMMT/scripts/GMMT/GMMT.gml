@@ -1233,6 +1233,10 @@ function gmmt_tween_internal(_id, _from, _to, _duration, _easing) {
 	return _tween;
 }
 
+function gmmt_get_tween(_id) {
+    return ds_map_find_value(gmmt_get().tweens_map, _id);
+}
+
 function gmmt_pulse(_id, _base_value, _pulse_to, _duration = 200000, _easing = undefined) {
 	gmmt_init_check_safe();
 	
