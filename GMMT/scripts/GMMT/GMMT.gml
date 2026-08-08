@@ -29,7 +29,7 @@
 *   					     ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝   ╚═╝   		                 *
 *   						       GameMaker Motion Toolkit									 *
 *   						  Tweening framework for GameMaker								 *
-*   						            Version 1.1.23					                     *
+*   						            Version 1.2.24					                     *
 *   																                         *
 *   						             by erkan612					                     *
 *   						****************************************                         *
@@ -189,6 +189,7 @@ function gmmt_init() {
 		default_duration: 300000,
 		clips: ds_map_create(),
 		paths: ds_map_create(),
+		sequences: ds_map_create(),
 	};
 }
 
@@ -2101,6 +2102,172 @@ function gmmt_tween_path_start(_id, _path_name, _duration = -1, _easing = undefi
 	return _tween;
 }
 
+// sequence
+function gmmt_sequence_begin(_name) {
+    return { name: _name, entries: [], total_duration: 0, loop: false };
+}
+
+function gmmt_sequence_append(_seq, _target_id, _from, _to, _duration, _easing = undefined) {
+    var _start = _seq.total_duration;
+    var _end = _start + _duration;
+    array_push(_seq.entries, {
+        kind: "tween", target_id: _target_id,
+        start_time: _start, end_time: _end,
+        from: _from, to: _to, easing: _easing,
+    });
+    _seq.total_duration = _end;
+    return _seq;
+}
+
+function gmmt_sequence_join(_seq, _target_id, _from, _to, _duration, _easing = undefined) {
+    var _count = array_length(_seq.entries);
+    var _start = (_count > 0) ? _seq.entries[_count - 1].start_time : 0;
+    var _end = _start + _duration;
+    array_push(_seq.entries, {
+        kind: "tween", target_id: _target_id,
+        start_time: _start, end_time: _end,
+        from: _from, to: _to, easing: _easing,
+    });
+    if (_end > _seq.total_duration) { _seq.total_duration = _end; }
+    return _seq;
+}
+
+function gmmt_sequence_callback(_seq, _func) {
+    array_push(_seq.entries, {
+        kind: "callback", func: _func,
+        start_time: _seq.total_duration, end_time: _seq.total_duration,
+        fired: false,
+    });
+    return _seq;
+}
+
+function gmmt_sequence_set_loop(_seq, _loop) { _seq.loop = _loop; return _seq; }
+
+function gmmt_sequence_end(_seq) {
+    ds_map_add(gmmt_get().sequences, _seq.name, _seq);
+}
+
+function gmmt_sequence_evaluate_entry(_entry, _t) {
+    if (_t <= _entry.start_time) { return _entry.from; }
+    if (_t >= _entry.end_time)   { return _entry.to; }
+    
+    var _local_t = (_entry.end_time > _entry.start_time)
+        ? (_t - _entry.start_time) / (_entry.end_time - _entry.start_time)
+        : 1;
+    
+    var _value_type = gmmt_detect_value_type(_entry.from);
+    var _ease_tween = {
+        easing: _entry.easing ?? gmmt_ease.LINEAR,
+        easing_power: 1, easing_intensity: 1,
+        easing_custom: undefined, flags: 0, ping_pong_forward: true,
+    };
+    var _eased = gmmt_get_eased_value(_ease_tween, clamp(_local_t, 0, 1));
+    return gmmt_lerp_values(_entry.from, _entry.to, _value_type, _eased, undefined);
+}
+
+function gmmt_sequence_resolve(_seq, _t) {
+    var _anim = gmmt_get();
+    var _resolved = [];
+    
+    for (var i = array_length(_seq.entries) - 1; i >= 0; i--) {
+        var _e = _seq.entries[i];
+        
+        if (_e.kind == "callback") {
+            if (_t >= _e.start_time) {
+                if (!_e.fired) { _e.fired = true; _e.func(); }
+            } else {
+                _e.fired = false;
+            }
+            continue;
+        }
+        
+        if (array_get_index(_resolved, _e.target_id) >= 0) { continue; }
+        if (_e.start_time > _t) { continue; }
+        
+        array_push(_resolved, _e.target_id);
+        var _t_reg = ds_map_find_value(_anim.tweens_map, _e.target_id);
+        if (_t_reg == undefined) { continue; }
+        _t_reg.current_value = gmmt_sequence_evaluate_entry(_e, _t);
+        if (_t_reg.on_update != undefined) { _t_reg.on_update(_t_reg); }
+    }
+    
+    for (var i = 0; i < array_length(_seq.entries); i++) {
+        var _e = _seq.entries[i];
+        if (_e.kind != "tween") { continue; }
+        if (array_get_index(_resolved, _e.target_id) >= 0) { continue; }
+        array_push(_resolved, _e.target_id);
+        var _t_reg = ds_map_find_value(_anim.tweens_map, _e.target_id);
+        if (_t_reg == undefined) { continue; }
+        _t_reg.current_value = _e.from;
+        if (_t_reg.on_update != undefined) { _t_reg.on_update(_t_reg); }
+    }
+}
+
+function gmmt_sequence_play(_name) {
+    gmmt_init_check_safe();
+    var _anim = gmmt_get();
+    var _seq = ds_map_find_value(_anim.sequences, _name);
+    if (_seq == undefined) { return undefined; }
+    
+    for (var i = 0; i < array_length(_seq.entries); i++) {
+        if (_seq.entries[i].kind == "callback") { _seq.entries[i].fired = false; }
+    }
+    
+    var _seen = [];
+    for (var i = 0; i < array_length(_seq.entries); i++) {
+        var _e = _seq.entries[i];
+        if (_e.kind != "tween") { continue; }
+        if (array_get_index(_seen, _e.target_id) >= 0) { continue; }
+        array_push(_seen, _e.target_id);
+        
+        gmmt_remove_existing_tween(_e.target_id);
+        var _t_reg = gmmt_create(_e.target_id, _e.from, _e.from, _seq.total_duration);
+        _t_reg.state = gmmt_tween_state.IDLE;
+    }
+    
+    var _clock_id = "_seq_clock_" + _name;
+    gmmt_tween_start(_clock_id, 0, _seq.total_duration, _seq.total_duration, gmmt_ease.LINEAR);
+    
+    var _clock = ds_map_find_value(_anim.tweens_map, _clock_id);
+    _clock.on_update = method(_seq, function(_clock) { gmmt_sequence_resolve(self, _clock.elapsed); });
+    _clock.on_complete = method(_seq, function(_clock) {
+        gmmt_sequence_resolve(self, self.total_duration);
+        if (self.loop) { gmmt_sequence_play(self.name); }
+    });
+    
+    gmmt_sequence_resolve(_seq, 0);
+    return _clock_id;
+}
+
+function gmmt_sequence_seek(_name, _t) {
+    var _seq = ds_map_find_value(gmmt_get().sequences, _name);
+    if (_seq == undefined) { return; }
+    _t = clamp(_t, 0, _seq.total_duration);
+    
+    var _clock = ds_map_find_value(gmmt_get().tweens_map, "_seq_clock_" + _name);
+    if (_clock != undefined) { _clock.elapsed = _t; }
+    
+    gmmt_sequence_resolve(_seq, _t);
+}
+
+function gmmt_sequence_pause(_name)  { gmmt_pause("_seq_clock_" + _name); }
+function gmmt_sequence_resume(_name) { gmmt_resume("_seq_clock_" + _name); }
+
+function gmmt_sequence_stop(_name) {
+    var _seq = ds_map_find_value(gmmt_get().sequences, _name);
+    if (_seq == undefined) { return; }
+    gmmt_stop("_seq_clock_" + _name, false);
+    for (var i = 0; i < array_length(_seq.entries); i++) {
+        if (_seq.entries[i].kind == "tween") { gmmt_stop(_seq.entries[i].target_id, false); }
+    }
+}
+
+function gmmt_sequence_get_progress(_name) {
+    var _clock_id = "_seq_clock_" + _name;
+    if (!gmmt_exists(_clock_id)) { return 1; }
+    return gmmt_get_progress(_clock_id);
+}
+
 // utility stuff
 function gmmt_lerp(_a, _b, _t) { return _a + (_b - _a) * clamp(_t, 0, 1); }
 
@@ -2151,6 +2318,11 @@ function gmmt_cleanup() {
 		ds_map_delete(_anim.timelines, _timeline_keys[t]);
 	}
 	ds_map_destroy(_anim.timelines);
+	
+	var _seq_keys = ds_map_keys_to_array(_anim.sequences);
+	for (var s = 0; s < array_length(_seq_keys); s++) { ds_map_delete(_anim.sequences, _seq_keys[s]); }
+	ds_map_destroy(_anim.sequences);
+	_anim.sequences = undefined;
 	
 	_anim.tweens = [ ];
 	
